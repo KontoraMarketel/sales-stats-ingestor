@@ -36,6 +36,6 @@ async def fetch_data(api_token: str, cards: list, ts) -> list:
                     response.raise_for_status()
 
                 result.extend(data["data"])
-                await asyncio.sleep(20)
+            await asyncio.sleep(20)
 
     return result
