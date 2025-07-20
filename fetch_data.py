@@ -1,9 +1,7 @@
 import logging
-from itertools import batched
-
 import aiohttp
 
-from utils import get_yesterday_moscow_from_utc
+from utils import get_yesterday_moscow_from_utc, chunked
 
 GET_SALES_STATS = "https://seller-analytics-api.wildberries.ru/api/v2/nm-report/detail/history"
 
@@ -18,7 +16,7 @@ async def fetch_data(api_token: str, cards: list, ts) -> list:
     yesterday = get_yesterday_moscow_from_utc(ts)
 
     async with aiohttp.ClientSession(headers=headers) as session:
-        for batch in batched(cards, batch_size):
+        for batch in chunked(cards, batch_size):
             nm_ids = [i['nmID'] for i in batch]
             logging.info("Fetching data from NM IDs: {}".format(nm_ids))
             payload = {
