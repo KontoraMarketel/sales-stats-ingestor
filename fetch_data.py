@@ -13,11 +13,12 @@ async def fetch_data(api_token: str, cards: list, ts) -> list:
     }
     batch_size = 20
     result = []
+    cards_list = cards['data']
 
     yesterday = get_yesterday_moscow_from_utc(ts)
 
     async with aiohttp.ClientSession(headers=headers) as session:
-        for batch in chunked(cards, batch_size):
+        for batch in chunked(cards_list, batch_size):
             nm_ids = [i['nmID'] for i in batch]
             logging.info("Fetching data from NM IDs: {}".format(nm_ids))
             payload = {

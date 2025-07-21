@@ -36,6 +36,11 @@ async def handle_message(msg):
     )
 
     data = await fetch_data(api_token, cards, ts)
+    load_data = {
+        "data": data,
+        "ts": ts,
+        "task_id": task_id,
+    }
     filename = "sales.json"
     prefix = f"{ts}/{task_id}/"
     minio_key = prefix + filename
@@ -45,7 +50,7 @@ async def handle_message(msg):
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
         bucket=MINIO_BUCKET,
-        data=data,
+        data=load_data,
         key=minio_key,
     )
 
