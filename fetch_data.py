@@ -37,7 +37,8 @@ async def fetch_data(api_token: str, cards: list, ts) -> list:
                     async with session.post(GET_SALES_STATS, json=payload) as response:
                         if response.status == 429:
                             logging.warning(f"Rate limited (429). Retrying after 10 seconds... NM IDs: {nm_ids}")
-                            await asyncio.sleep(10)
+                            retry_after = int(response.headers['X-Ratelimit-Retry'])
+                            await asyncio.sleep(retry_after)
                             continue  # retry
 
                         data = await response.json()
