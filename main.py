@@ -6,6 +6,7 @@ import os
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
 from fetch_data import fetch_data
+from minio_pool import MinioClientPool
 from storage import upload_to_minio, download_from_minio
 
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +18,9 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET")
+CONCURRENT_TASKS = 100  # максимальное количество одновременных задач
+
+semaphore = asyncio.Semaphore(CONCURRENT_TASKS)
 
 
 async def handle_message(msg):
@@ -27,10 +31,15 @@ async def handle_message(msg):
 
     logging.info(f"Start processing task {task_id}")
 
-    cards = await download_from_minio(
+    minio_pool = MinioClientPool(
         endpoint_url=MINIO_ENDPOINT,
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
+        size=5,
+    )
+
+    cards = await download_from_minio(
+        pool=minio_pool,
         bucket=MINIO_BUCKET,
         key=cards_key,
     )
@@ -46,9 +55,7 @@ async def handle_message(msg):
     minio_key = prefix + filename
 
     await upload_to_minio(
-        endpoint_url=MINIO_ENDPOINT,
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
+        pool=minio_pool,
         bucket=MINIO_BUCKET,
         data=load_data,
         key=minio_key,
@@ -61,6 +68,21 @@ async def handle_message(msg):
         "ts": ts,
         "minio_key": minio_key
     }
+
+
+async def process_and_produce(msg_value, producer):
+    async with semaphore:
+        try:
+            next_msg = await handle_message(msg_value)
+            encoded_task_id = str(next_msg["task_id"]).encode("utf-8")
+            await producer.send(
+                PRODUCER_STG_TOPIC,
+                value=next_msg,
+                key=encoded_task_id,
+            )
+        except Exception as e:
+            logging.error(f"Error processing message: {e}")
+            # TODO: write task to out of the box table
 
 
 async def main():
@@ -80,23 +102,17 @@ async def main():
 
     await consumer.start()
     await producer.start()
+    tasks = set()
     try:
         async for msg in consumer:
-            try:
-                next_msg = await handle_message(msg.value)
-                encoded_task_id = str(next_msg["task_id"]).encode("utf-8")
-                await producer.send(
-                    PRODUCER_STG_TOPIC,
-                    value=next_msg,
-                    key=encoded_task_id,
-                )
-            except Exception as e:
-                # TODO: write task to out of the box table
-                logging.error(f"Error processing message: {e}")
+            task = asyncio.create_task(process_and_produce(msg.value, producer))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)  # Убираем завершённые таски
     finally:
-        logging.info("Stopping consumer.")
+        logging.info("Stopping consumer. Waiting for tasks to finish...")
         await consumer.stop()
         await producer.stop()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 if __name__ == "__main__":
