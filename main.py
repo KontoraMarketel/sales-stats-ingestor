@@ -112,7 +112,7 @@ async def main():
         async for msg in consumer:
             task = asyncio.create_task(process_and_produce(msg.value, producer, minio_pool))
             tasks.add(task)
-            task.add_done_callback(tasks.discard)  # Убираем завершённые таски
+            task.add_done_callback(tasks.discard)
     finally:
         logging.info("Stopping consumer. Waiting for tasks to finish...")
         await consumer.stop()

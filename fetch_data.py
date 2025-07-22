@@ -30,13 +30,30 @@ async def fetch_data(api_token: str, cards: list, ts) -> list:
                 "timezone": "Europe/Moscow",
                 "aggregationLevel": "day"
             }
-            async with session.post(GET_SALES_STATS, json=payload) as response:
-                data = await response.json()
-                if response.status != 200:
-                    logging.error("Error fetching data from NM IDs: {} Error response", nm_ids, data)
-                    response.raise_for_status()
 
-                result.extend(data["data"])
+            # retry loop
+            while True:
+                try:
+                    async with session.post(GET_SALES_STATS, json=payload) as response:
+                        if response.status == 429:
+                            logging.warning(f"Rate limited (429). Retrying after 10 seconds... NM IDs: {nm_ids}")
+                            await asyncio.sleep(10)
+                            continue  # retry
+
+                        data = await response.json()
+
+                        if response.status != 200:
+                            logging.error(
+                                f"Failed fetch for NM IDs {nm_ids}, status: {response.status}, response: {data}")
+                            response.raise_for_status()
+
+                        result.extend(data["data"])
+                        break
+
+                except aiohttp.ClientError as e:
+                    logging.error(f"Network error fetching data for NM IDs {nm_ids}: {e}")
+                    raise
+
             await asyncio.sleep(20)
 
     return result
