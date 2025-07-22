@@ -23,7 +23,7 @@ CONCURRENT_TASKS = 100  # максимальное количество одно
 semaphore = asyncio.Semaphore(CONCURRENT_TASKS)
 
 
-async def handle_message(msg):
+async def handle_message(msg, minio_pool: MinioClientPool):
     task_id = msg["task_id"]
     api_token = msg["wb_token"]
     ts = msg["ts"]
@@ -31,19 +31,14 @@ async def handle_message(msg):
 
     logging.info(f"Start processing task {task_id}")
 
-    minio_pool = MinioClientPool(
-        endpoint_url=MINIO_ENDPOINT,
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
-        size=5,
-    )
-
     cards = await download_from_minio(
         pool=minio_pool,
         bucket=MINIO_BUCKET,
         key=cards_key,
     )
+    logging.info(f"Cards fetched from minio, cards: {cards}")
 
+    logging.info(f"Start fetching data")
     data = await fetch_data(api_token, cards, ts)
     load_data = {
         "data": data,
@@ -53,6 +48,8 @@ async def handle_message(msg):
     filename = "sales.json"
     prefix = f"{ts}/{task_id}/"
     minio_key = prefix + filename
+
+    logging.info(f"Data fetched from datasource")
 
     await upload_to_minio(
         pool=minio_pool,
@@ -70,10 +67,10 @@ async def handle_message(msg):
     }
 
 
-async def process_and_produce(msg_value, producer):
+async def process_and_produce(msg_value, producer, minio_pool):
     async with semaphore:
         try:
-            next_msg = await handle_message(msg_value)
+            next_msg = await handle_message(msg_value, minio_pool)
             encoded_task_id = str(next_msg["task_id"]).encode("utf-8")
             await producer.send(
                 PRODUCER_STG_TOPIC,
@@ -100,12 +97,19 @@ async def main():
         value_serializer=lambda v: json.dumps(v).encode("utf-8"),
     )
 
+    minio_pool = MinioClientPool(
+        endpoint_url=MINIO_ENDPOINT,
+        access_key=MINIO_ACCESS_KEY,
+        secret_key=MINIO_SECRET_KEY,
+        size=5,
+    )
+
     await consumer.start()
     await producer.start()
     tasks = set()
     try:
         async for msg in consumer:
-            task = asyncio.create_task(process_and_produce(msg.value, producer))
+            task = asyncio.create_task(process_and_produce(msg.value, producer, minio_pool))
             tasks.add(task)
             task.add_done_callback(tasks.discard)  # Убираем завершённые таски
     finally:
