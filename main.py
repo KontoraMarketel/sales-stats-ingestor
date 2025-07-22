@@ -103,6 +103,7 @@ async def main():
         secret_key=MINIO_SECRET_KEY,
         size=5,
     )
+    await minio_pool.start()
 
     await consumer.start()
     await producer.start()
