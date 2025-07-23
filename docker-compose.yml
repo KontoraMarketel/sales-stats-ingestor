@@ -6,6 +6,7 @@ services:
     environment:
       KAFKA_CONSUMER_TOPIC: ingest-sales-tasks
       KAFKA_PRODUCER_STG_SALES_TASKS: stg-sales-tasks
+      KAFKA_CONSUMER_GROUP: sales-stats-ingestor
       KAFKA_BOOTSTRAP_SERVERS: kafka-compose-kafka-broker-1:9092
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
