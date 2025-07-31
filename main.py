@@ -4,9 +4,9 @@ import logging
 import os
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from minio_pool import MinioClientPool
 
 from fetch_data import fetch_data
-from minio_pool import MinioClientPool
 from storage import upload_to_minio, download_from_minio
 
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +18,8 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET")
-CONCURRENT_TASKS = 100  # максимальное количество одновременных задач
+CONCURRENT_TASKS = 100
+MINIO_PULL_SIZE = 20
 
 semaphore = asyncio.Semaphore(CONCURRENT_TASKS)
 
@@ -78,7 +79,7 @@ async def process_and_produce(msg_value, producer, minio_pool):
                 key=encoded_task_id,
             )
         except Exception as e:
-            logging.error(f"Error processing message: {e}")
+            logging.error(f"Error processing message: {e}", exc_info=True, stack_info=True)
             # TODO: write task to out of the box table
 
 
@@ -101,7 +102,7 @@ async def main():
         endpoint_url=MINIO_ENDPOINT,
         access_key=MINIO_ACCESS_KEY,
         secret_key=MINIO_SECRET_KEY,
-        size=5,
+        size=MINIO_PULL_SIZE,
     )
     await minio_pool.start()
 
@@ -118,6 +119,7 @@ async def main():
         await consumer.stop()
         await producer.stop()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await minio_pool.stop()
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ async def upload_to_minio(pool: MinioClientPool, bucket, data, key):
             Body=data.encode("utf-8"),
             ContentType="application/json"
         )
+    except Exception:
+        raise
     finally:
         await pool.release(client)
 
@@ -31,5 +33,7 @@ async def download_from_minio(
         response = await client.get_object(Bucket=bucket, Key=key)
         content = await response['Body'].read()
         return json.loads(content.decode("utf-8"))
-    except client.exceptions.NoSuchKey:
-        raise FileNotFoundError(f"No such key: {key}")
+    except Exception:
+        raise
+    finally:
+        await pool.release(client)
